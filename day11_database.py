@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, Float, Integer, String, create_engine
+from sqlalchemy import Column, Float, ForeignKey, Integer, String, create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 DATABASE_URL = "sqlite:///./ecobazar.db"
@@ -31,6 +31,13 @@ class ProductDB(Base):
    price = Column(Float, nullable=False)
    stock = Column(Integer, nullable=False, default=0)
 
+class OrderDB(Base):
+   __tablename__ = "orders"
+   id = Column(Integer, primary_key=True, index=True)
+   product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+   quantity = Column(Integer, nullable=False)
+   total_price = Column(Float, nullable=False)
+
 Base.metadata.create_all(bind=engine)
 
 class ProductCreate(BaseModel):
@@ -44,6 +51,10 @@ class ProductUpdate(BaseModel):
    category: str | None = Field(default=None, min_length=1, max_length=50)
    price: float | None = Field(default=None, gt=0)
    stock: int | None = Field(default=None, ge=0)
+
+class OrderCreate(BaseModel):
+   product_id: int
+   quantity: int = Field(gt=0)
 
 @app.post("/products", status_code=201)
 def create_product(payload: ProductCreate, db: SessionDep): 
@@ -117,3 +128,20 @@ def delete_product(product: ProductDep, db: SessionDep):
    db.delete(product)
    db.commit()
    return {"message": f"Product {product.name} deleted"}
+
+@app.post('/orders', status_code=201)
+def create_order(payload: OrderCreate, db: SessionDep):
+   product = get_product_by_id(payload.product_id, db)
+   if product.stock < payload.quantity:
+      raise HTTPException(status_code=400, detail="Not enough products available")
+   product.stock -= payload.quantity
+   total_price = payload.quantity * product.price
+   new_order = OrderDB(
+      product_id=payload.product_id,
+      quantity=payload.quantity,
+      total_price=total_price
+   )
+   db.add(new_order)
+   db.commit()
+   db.refresh(new_order)
+   return new_order
