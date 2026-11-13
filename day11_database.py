@@ -1,9 +1,9 @@
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Column, Float, ForeignKey, Integer, String, create_engine
-from sqlalchemy.orm import Session, declarative_base, sessionmaker
+from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 
 DATABASE_URL = "sqlite:///./ecobazar.db"
 
@@ -38,6 +38,8 @@ class OrderDB(Base):
    quantity = Column(Integer, nullable=False)
    total_price = Column(Float, nullable=False)
 
+   product = relationship("ProductDB")
+
 Base.metadata.create_all(bind=engine)
 
 class ProductCreate(BaseModel):
@@ -52,9 +54,23 @@ class ProductUpdate(BaseModel):
    price: float | None = Field(default=None, gt=0)
    stock: int | None = Field(default=None, ge=0)
 
+class ProductOut(BaseModel):
+   id: int
+   name: str
+   category: str
+   price: float
+   model_config = ConfigDict(from_attributes=True)
+
 class OrderCreate(BaseModel):
    product_id: int
    quantity: int = Field(gt=0)
+
+class OrderOut(BaseModel):
+   id: int
+   quantity: int
+   total_price: float
+   product: ProductOut
+   model_config = ConfigDict(from_attributes=True)
 
 @app.post("/products", status_code=201)
 def create_product(payload: ProductCreate, db: SessionDep): 
@@ -129,7 +145,7 @@ def delete_product(product: ProductDep, db: SessionDep):
    db.commit()
    return {"message": f"Product {product.name} deleted"}
 
-@app.post('/orders', status_code=201)
+@app.post('/orders', status_code=201, response_model=OrderOut)
 def create_order(payload: OrderCreate, db: SessionDep):
    product = get_product_by_id(payload.product_id, db)
    if product.stock < payload.quantity:
@@ -145,3 +161,8 @@ def create_order(payload: OrderCreate, db: SessionDep):
    db.commit()
    db.refresh(new_order)
    return new_order
+
+@app.get("/orders", response_model=list[OrderOut])
+def get_orders(db: SessionDep):
+   orders = db.query(OrderDB).all()
+   return orders 
