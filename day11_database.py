@@ -31,14 +31,22 @@ class ProductDB(Base):
    price = Column(Float, nullable=False)
    stock = Column(Integer, nullable=False, default=0)
 
+class OrderItemDB(Base):
+   __tablename__ = "order_items"
+   id = Column(Integer, primary_key=True, index=True)
+   order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+   product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+   quantity = Column(Integer, nullable=False)
+   price_at_purchase = Column(Float, nullable=False)
+
+   product = relationship("ProductDB")
+
 class OrderDB(Base):
    __tablename__ = "orders"
    id = Column(Integer, primary_key=True, index=True)
-   product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
-   quantity = Column(Integer, nullable=False)
    total_price = Column(Float, nullable=False)
 
-   product = relationship("ProductDB")
+   items = relationship("OrderItemDB")
 
 Base.metadata.create_all(bind=engine)
 
@@ -61,15 +69,24 @@ class ProductOut(BaseModel):
    price: float
    model_config = ConfigDict(from_attributes=True)
 
-class OrderCreate(BaseModel):
+class OrderItemCreate(BaseModel):
    product_id: int
    quantity: int = Field(gt=0)
 
+class OrderCreate(BaseModel):
+   items: list[OrderItemCreate] = Field(min_length=1)
+
+class OrderItemOut(BaseModel):
+   id: int
+   quantity: int = Field(gt=0)
+   price_at_purchase: float
+   product: ProductOut
+   model_config = ConfigDict(from_attributes=True)
+
 class OrderOut(BaseModel):
    id: int
-   quantity: int
    total_price: float
-   product: ProductOut
+   items: list[OrderItemOut]
    model_config = ConfigDict(from_attributes=True)
 
 @app.post("/products", status_code=201)
@@ -147,16 +164,21 @@ def delete_product(product: ProductDep, db: SessionDep):
 
 @app.post('/orders', status_code=201, response_model=OrderOut)
 def create_order(payload: OrderCreate, db: SessionDep):
-   product = get_product_by_id(payload.product_id, db)
-   if product.stock < payload.quantity:
-      raise HTTPException(status_code=400, detail="Not enough products available")
-   product.stock -= payload.quantity
-   total_price = payload.quantity * product.price
-   new_order = OrderDB(
-      product_id=payload.product_id,
-      quantity=payload.quantity,
-      total_price=total_price
-   )
+   total_price = 0
+   order_items = []
+   for item in payload.items:
+      product = get_product_by_id(item.product_id, db)
+      if product.stock < item.quantity:
+         raise HTTPException(status_code=400, detail="Not enough products available")
+      product.stock -= item.quantity
+      total_price = item.quantity * product.price
+      new_item = OrderItemDB(
+         product_id=item.product_id,
+         quantity=item.quantity,
+         price_at_purchase=product.price
+      )
+      order_items.append(new_item)
+   new_order = OrderDB(total_price=total_price, items=order_items)
    db.add(new_order)
    db.commit()
    db.refresh(new_order)
