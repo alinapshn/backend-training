@@ -1,100 +1,111 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException
+
+from database import Base, SessionDep, engine
+from models import OrderDB, OrderItemDB, ProductDB
+from schemas import OrderCreate, OrderOut, ProductCreate, ProductUpdate
 
 app = FastAPI()
 
-products = [
-    {"id": 1, "name": "Keratin Shampoo", "category": "hair", "price": 25, "stock": 5},
-    {"id": 2, "name": "Hydrating Mask", "category": "hair", "price": 40, "stock": 0},
-    {"id": 3, "name": "Heat Protection Spray", "category": "hair", "price": 30, "stock": 3},
-    {"id": 4, "name": "Vitamin C Face Cream", "category": "face", "price": 55, "stock": 2},
-    {"id": 5, "name": "Hyaluronic Serum", "category": "face", "price": 70, "stock": 4},
-]
-
-class ProductCreate(BaseModel):
-   name: str = Field(min_length=1, max_length=100)
-   category: str = Field(min_length=1, max_length=50)
-   price: float = Field(gt=0)
-   stock: int = Field(ge=0)
-
-class ProductUpdate(BaseModel):
-   name: str | None = Field(default=None, min_length=1, max_length=100)
-   category: str | None = Field(default=None, min_length=1, max_length=50)
-   price: float | None = Field(default=None, gt=0)
-   stock: int | None = Field(default=None, ge=0)
-
-@app.get("/products")
-def get_products(category: str = None, max_price: float = None):  # noqa: RUF013
-   if max_price is not None and max_price <= 0:
-      raise HTTPException(status_code=400, detail="Max price must be greater than 0")
-   if category is not None:
-      category = category.strip().lower()
-   found_products = []
-   for item in products:
-      if category is not None and item["category"] != category:
-         continue
-      if max_price is not None and item["price"] > max_price:
-         continue
-      if item["stock"] > 0:
-         found_products.append(item)
-   return {"count": len(found_products), "items": found_products}
-
-@app.get("/products/{product_id}")
-def get_product_by_id(product_id: int):
-   for item in products:
-      if item["id"] == product_id:
-         return item
-   raise HTTPException(status_code=404, detail="Product not found")
+Base.metadata.create_all(bind=engine)
 
 @app.post("/products", status_code=201)
-def create_product(payload: ProductCreate):
+def create_product(payload: ProductCreate, db: SessionDep): 
    clean_name = payload.name.strip()
    clean_category = payload.category.strip().lower()
    if clean_name == "" or clean_category == "":
       raise HTTPException(status_code=400, detail="Name and category cannot be blank")
-   for item in products:
-      if item["name"].lower() == clean_name.lower():
-         raise HTTPException(status_code=400, detail="Product with this name already exists")
-   new_id = max([item["id"] for item in products], default=0) + 1
-   new_product = {
-      "id": new_id,
-      "name": clean_name,
-      "category": clean_category,
-      "price": payload.price,
-      "stock": payload.stock
-   }
-   products.append(new_product)
+   is_exist = db.query(ProductDB).filter(ProductDB.name == clean_name).first()
+   if is_exist:
+      raise HTTPException(status_code=400, detail="Product with this name already exists")
+   new_product = ProductDB(
+      name=clean_name,
+      category=clean_category,
+      price=payload.price,
+      stock=payload.stock
+   )
+   db.add(new_product)
+   db.commit()
+   db.refresh(new_product)
    return new_product
 
+@app.get("/products")
+def get_products(db: SessionDep): 
+   products = db.query(ProductDB).filter(ProductDB.stock > 0).all()
+   return products
+
+def get_product_by_id(product_id: int, db: SessionDep) -> ProductDB:
+   product = db.query(ProductDB).filter(ProductDB.id == product_id).first()
+   if not product:
+      raise HTTPException(status_code=404, detail="Product not found")
+   return product 
+
+ProductDep = Annotated[ProductDB, Depends(get_product_by_id)]
+
+@app.get("/products/{product_id}")
+def get_product(product: ProductDep):
+   return product
+
 @app.patch("/products/{product_id}")
-def update_product(product_id: int, payload: ProductUpdate):
-   for item in products:
-      if item["id"] == product_id:
-         if payload.name is not None:
-            clean_name = payload.name.strip()
-            if clean_name == "":
-               raise HTTPException(status_code=400, detail="Name cannot be blank")
-            item["name"] = clean_name
+def update_product(payload: ProductUpdate, product: ProductDep, db: SessionDep):
+   if payload.name is not None:
+      clean_name = payload.name.strip()
+      if clean_name == "":
+         raise HTTPException(status_code=400, detail="Name cannot be blank")
 
-         if payload.category is not None:
-            clean_category = payload.category.strip().lower()
-            if clean_category == "":
-               raise HTTPException(status_code=400, detail="Category cannot be blank")
-            item["category"] = clean_category
+      is_exist = db.query(ProductDB).filter(
+         ProductDB.name == clean_name, ProductDB.id != product.id
+         ).first()
+      if is_exist:
+         raise HTTPException(status_code=400, detail="Product with this name already exists")
+      product.name = clean_name
 
-         if payload.price is not None:
-            item["price"] = payload.price
+   if payload.category is not None:
+      clean_category = payload.category.strip().lower()
+      if clean_category == "":
+         raise HTTPException(status_code=400, detail="Category cannot be blank")
+      product.category = clean_category
 
-         if payload.stock is not None:
-            item["stock"] = payload.stock
-         return item
-      
-   raise HTTPException(status_code=404, detail="Not Found")
+   if payload.price is not None:
+      product.price = payload.price
+
+   if payload.stock is not None:
+      product.stock = payload.stock
+
+   db.commit()
+   db.refresh(product)
+   return product 
 
 @app.delete("/products/{product_id}")
-def delete_product(product_id: int):
-   for item in products:
-      if item["id"] == product_id:
-         products.remove(item)
-         return {"message": "Product deleted successfully", "id": product_id}
-   raise HTTPException(status_code=404, detail="Not found")
+def delete_product(product: ProductDep, db: SessionDep):
+   db.delete(product)
+   db.commit()
+   return {"message": f"Product {product.name} deleted"}
+
+@app.post('/orders', status_code=201, response_model=OrderOut)
+def create_order(payload: OrderCreate, db: SessionDep):
+   total_price = 0
+   order_items = []
+   for item in payload.items:
+      product = get_product_by_id(item.product_id, db)
+      if product.stock < item.quantity:
+         raise HTTPException(status_code=400, detail="Not enough products available")
+      product.stock -= item.quantity
+      total_price = item.quantity * product.price
+      new_item = OrderItemDB(
+         product_id=item.product_id,
+         quantity=item.quantity,
+         price_at_purchase=product.price
+      )
+      order_items.append(new_item)
+   new_order = OrderDB(total_price=total_price, items=order_items)
+   db.add(new_order)
+   db.commit()
+   db.refresh(new_order)
+   return new_order
+
+@app.get("/orders", response_model=list[OrderOut])
+def get_orders(db: SessionDep):
+   orders = db.query(OrderDB).all()
+   return orders 
