@@ -28,3 +28,9 @@ class OrderDB(Base):
    total_price = Column(Float, nullable=False)
 
    items = relationship("OrderItemDB")
+
+class UserDB(Base):
+   __tablename__ = "users"
+   id = Column(Integer, primary_key=True, index=True)
+   email = Column(String, unique=True, index=True, nullable=False)
+   hashed_password = Column(String, nullable=False)

@@ -39,3 +39,12 @@ class OrderOut(BaseModel):
    total_price: float
    items: list[OrderItemOut]
    model_config = ConfigDict(from_attributes=True)
+
+class UserCreate(BaseModel):
+   email: str = Field(min_length=5, max_length=100)
+   password: str = Field(min_length=6, max_length=100)
+
+class UserOut(BaseModel):
+   id: int
+   email: str
+   model_config = ConfigDict(from_attributes=True)

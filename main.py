@@ -1,10 +1,18 @@
 from typing import Annotated
 
+import bcrypt
 from fastapi import Depends, FastAPI, HTTPException
 
 from database import Base, SessionDep, engine
-from models import OrderDB, OrderItemDB, ProductDB
-from schemas import OrderCreate, OrderOut, ProductCreate, ProductUpdate
+from models import OrderDB, OrderItemDB, ProductDB, UserDB
+from schemas import (
+   OrderCreate,
+   OrderOut,
+   ProductCreate,
+   ProductUpdate,
+   UserCreate,
+   UserOut,
+)
 
 app = FastAPI()
 
@@ -92,7 +100,7 @@ def create_order(payload: OrderCreate, db: SessionDep):
       if product.stock < item.quantity:
          raise HTTPException(status_code=400, detail="Not enough products available")
       product.stock -= item.quantity
-      total_price = item.quantity * product.price
+      total_price += item.quantity * product.price
       new_item = OrderItemDB(
          product_id=item.product_id,
          quantity=item.quantity,
@@ -109,3 +117,21 @@ def create_order(payload: OrderCreate, db: SessionDep):
 def get_orders(db: SessionDep):
    orders = db.query(OrderDB).all()
    return orders 
+
+def hash_password(password: str) -> str:
+   pwd_bytes = password.encode("utf-8")
+   salt = bcrypt.gensalt()
+   hashed = bcrypt.hashpw(pwd_bytes, salt)
+   return hashed.decode("utf-8")
+
+@app.post("/register", status_code=201, response_model=UserOut)
+def create_user(payload: UserCreate, db: SessionDep):
+   clean_mail = payload.email.strip().lower()
+   is_exist = db.query(UserDB).filter(UserDB.email == clean_mail).first()
+   if is_exist:
+      raise HTTPException(status_code=400, detail="Email already registered")
+   new_user = UserDB(email=clean_mail, hashed_password=hash_password(payload.password))
+   db.add(new_user)
+   db.commit()
+   db.refresh(new_user)
+   return new_user
