@@ -1,6 +1,8 @@
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import bcrypt
+import jwt
 from fastapi import Depends, FastAPI, HTTPException
 
 from database import Base, SessionDep, engine
@@ -10,7 +12,9 @@ from schemas import (
    OrderOut,
    ProductCreate,
    ProductUpdate,
+   TokenOut,
    UserCreate,
+   UserLogin,
    UserOut,
 )
 
@@ -135,3 +139,27 @@ def create_user(payload: UserCreate, db: SessionDep):
    db.commit()
    db.refresh(new_user)
    return new_user
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+   return bcrypt.checkpw(
+      plain_password.encode("utf-8"),
+      hashed_password.encode("utf-8")
+   )
+
+SECRET_KEY = "secret-ecobazar-key"
+ALGORITHM = "HS256"
+
+def create_access_token(user_id: int) -> str:
+   expire = datetime.now(UTC) + timedelta(minutes=60)
+   payload = {"sub": str(user_id), "exp": expire}
+   return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+@app.post("/login", response_model=TokenOut)
+def login_user(payload: UserLogin, db: SessionDep):
+   clean_mail = payload.email.strip().lower()
+   user = db.query(UserDB).filter(UserDB.email == clean_mail).first()
+   right_password = verify_password(payload.password, user.hashed_password)
+   if not user or not right_password:
+      raise HTTPException(status_code=401, detail="Invalid email or password")
+   token = create_access_token(user.id)
+   return {"access_token": token, "token_type": "bearer"}
