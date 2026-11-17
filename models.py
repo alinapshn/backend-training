@@ -25,9 +25,11 @@ class OrderItemDB(Base):
 class OrderDB(Base):
    __tablename__ = "orders"
    id = Column(Integer, primary_key=True, index=True)
+   user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
    total_price = Column(Float, nullable=False)
 
    items = relationship("OrderItemDB")
+   user = relationship("UserDB")
 
 class UserDB(Base):
    __tablename__ = "users"

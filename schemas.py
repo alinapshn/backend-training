@@ -36,6 +36,7 @@ class OrderItemOut(BaseModel):
 
 class OrderOut(BaseModel):
    id: int
+   user_id: int
    total_price: float
    items: list[OrderItemOut]
    model_config = ConfigDict(from_attributes=True)
