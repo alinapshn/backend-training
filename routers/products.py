@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from database import SessionDep
 from models import ProductDB
 from schemas import ProductCreate, ProductUpdate
+from security import AdminUserDep
 
 router = APIRouter(prefix="/products", tags=["Products"])
 
@@ -17,7 +18,7 @@ def get_product_by_id(product_id: int, db: SessionDep) -> ProductDB:
 ProductDep = Annotated[ProductDB, Depends(get_product_by_id)]
 
 @router.post("", status_code=201)
-def create_product(payload: ProductCreate, db: SessionDep): 
+def create_product(payload: ProductCreate, admin: AdminUserDep, db: SessionDep): 
    clean_name = payload.name.strip()
    clean_category = payload.category.strip().lower()
    if clean_name == "" or clean_category == "":
@@ -46,7 +47,7 @@ def get_product(product: ProductDep):
    return product
 
 @router.patch("/{product_id}")
-def update_product(payload: ProductUpdate, product: ProductDep, db: SessionDep):
+def update_product(payload: ProductUpdate, product: ProductDep, admin: AdminUserDep, db: SessionDep):
    if payload.name is not None:
       clean_name = payload.name.strip()
       if clean_name == "":
@@ -76,7 +77,7 @@ def update_product(payload: ProductUpdate, product: ProductDep, db: SessionDep):
    return product 
 
 @router.delete("/{product_id}")
-def delete_product(product: ProductDep, db: SessionDep):
+def delete_product(product: ProductDep, admin: AdminUserDep, db: SessionDep):
    db.delete(product)
    db.commit()
    return {"message": f"Product {product.name} deleted"}

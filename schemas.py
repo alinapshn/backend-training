@@ -48,6 +48,7 @@ class UserCreate(BaseModel):
 class UserOut(BaseModel):
    id: int
    email: str
+   role: str
    model_config = ConfigDict(from_attributes=True)
 
 class UserLogin(BaseModel):
