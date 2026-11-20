@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import SessionDep
 from models import ProductDB
@@ -38,8 +38,37 @@ def create_product(payload: ProductCreate, admin: AdminUserDep, db: SessionDep):
    return new_product
 
 @router.get("")
-def get_products(db: SessionDep): 
-   products = db.query(ProductDB).filter(ProductDB.stock > 0).all()
+def get_products(
+   db: SessionDep, 
+   search: str | None = None,
+   category: str | None = None,
+   min_price: float | None = Query(default=None, ge=0),
+   max_price: float | None = Query(default=None, ge=0),
+   limit: int = Query(default=10, ge=1, le=100),
+   offset: int = Query(default=0, ge=0)
+): 
+   if min_price is not None and max_price is not None and min_price > max_price:
+      raise HTTPException(status_code=400, detail="min_price cannot be greater than max_price")
+
+   query = db.query(ProductDB).filter(ProductDB.stock > 0)
+
+   if category is not None:
+      clean_category = category.strip().lower()
+      if clean_category:
+         query = query.filter(ProductDB.category == clean_category)
+
+   if search is not None:
+      clean_search = search.strip().lower()
+      if clean_search:
+         query = query.filter(ProductDB.name.ilike(f"%{clean_search}%"))
+
+   if min_price is not None: 
+      query = query.filter(ProductDB.price >= min_price)
+
+   if max_price is not None:
+      query = query.filter(ProductDB.price <= max_price)
+
+   products = query.order_by(ProductDB.id).offset(offset).limit(limit).all()
    return products
 
 @router.get("/{product_id}")
