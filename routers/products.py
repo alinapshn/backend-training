@@ -29,6 +29,7 @@ def create_product(payload: ProductCreate, admin: AdminUserDep, db: SessionDep):
    new_product = ProductDB(
       name=clean_name,
       category=clean_category,
+      description=payload.description,
       price=payload.price,
       stock=payload.stock
    )
@@ -94,6 +95,9 @@ def update_product(payload: ProductUpdate, product: ProductDep, admin: AdminUser
       if clean_category == "":
          raise HTTPException(status_code=400, detail="Category cannot be blank")
       product.category = clean_category
+
+   if payload.description is not None:
+      product.description = payload.description
 
    if payload.price is not None:
       product.price = payload.price
