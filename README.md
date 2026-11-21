@@ -5,8 +5,8 @@ Backend REST API for an e-commerce platform built with FastAPI and SQLAlchemy as
 ## Tech Stack
 
 - **Framework:** FastAPI
-- **Database & ORM:** SQLite (transitioning to PostgreSQL), SQLAlchemy
-- **Migrations:** Alembic
+- **Database & ORM:** PostgreSQL (production/Docker), SQLite (local/tests), SQLAlchemy
+- **Containerization:** Docker, Docker Compose
 - **Auth & Security:** JWT (`PyJWT`), password hashing (`bcrypt`), Role-Based Access Control
 - **Validation:** Pydantic v2
 - **Testing:** Pytest, FastAPI `TestClient`
@@ -34,6 +34,8 @@ Backend REST API for an e-commerce platform built with FastAPI and SQLAlchemy as
 ├── security.py         # JWT, bcrypt, and role dependencies
 ├── alembic.ini
 ├── requirements.txt
+├── Dockerfile
+├── docker-compose.yml
 └── .env.example
 ```
 
@@ -83,6 +85,24 @@ Backend REST API for an e-commerce platform built with FastAPI and SQLAlchemy as
 
    Interactive API docs (Swagger UI) will be available at `http://127.0.0.1:8000/docs`.
 
+## Run with Docker
+
+1. **Copy environment template:**
+
+       cp .env.example .env
+
+2. **Build and start containers (FastAPI + PostgreSQL):**
+
+       docker compose up --build
+
+   Swagger UI will be available at `http://127.0.0.1:8000/docs`.
+
 ## Running Tests
 
+Run locally:
+
     python -m pytest -v
+
+Or inside the running Docker container:
+
+    docker compose exec api python -m pytest -v
